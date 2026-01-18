@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"net/http"
-	"os"
 	"testing"
 	"time"
 
@@ -20,14 +19,6 @@ import (
 )
 
 func setupTestServer(t *testing.T) (*Server, func()) {
-	// Save original environment variables
-	originalAPIKey := os.Getenv("MEERKAT_API_KEY")
-	originalPort := os.Getenv("MEERKAT_API_PORT")
-
-	// Set test environment variables
-	os.Setenv("MEERKAT_API_KEY", "test-api-key")
-	os.Unsetenv("MEERKAT_API_PORT") // Use default port
-
 	// Setup in-memory database
 	testDB, err := database.ConnectSQLite(":memory:")
 	if err != nil {
@@ -42,32 +33,33 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 
 	queries := db.New(testDB)
 	entityRepo := entityinfra.NewRepository(queries, queries)
-	monitorRepo := monitoringinfra.NewRepository(queries, queries, testDB, entityRepo)
-	metricsRepo := metricsinfra.NewRepository(queries, queries, testDB, entityRepo)
+	monitorRepo := monitoringinfra.NewRepository(queries, queries, testDB, testDB, entityRepo)
+	metricsRepo := metricsinfra.NewRepository(queries, queries, testDB, testDB, entityRepo)
 
 	logger := logger.DefaultLogger()
 	monitorService := monitoringapp.NewService(logger, monitorRepo, entityRepo)
 	metricsService := metricsapp.NewService(logger, metricsRepo, entityRepo)
 	configLoader := configapp.NewLoader(logger, monitorService, metricsService)
 
-	server, err := NewServer(logger, configLoader, entityRepo, monitorRepo, metricsRepo)
+	// Create test runtime config
+	runtimeCfg := &configapp.RuntimeConfig{
+		APIKey:     "test-api-key",
+		APIPort:    "8080",
+		DevMode:    false,
+		LogLevel:   "INFO",
+		LogFormat:  "text",
+		LogOutput:  "stdout",
+		DBPath:     ":memory:",
+		ConfigPath: "test-config.json",
+	}
+
+	server, err := NewServer(logger, runtimeCfg, configLoader, entityRepo, monitorRepo, metricsRepo)
 	if err != nil {
 		t.Fatalf("Failed to create server: %v", err)
 	}
 
 	cleanup := func() {
 		testDB.Close()
-		// Restore original environment variables
-		if originalAPIKey != "" {
-			os.Setenv("MEERKAT_API_KEY", originalAPIKey)
-		} else {
-			os.Unsetenv("MEERKAT_API_KEY")
-		}
-		if originalPort != "" {
-			os.Setenv("MEERKAT_API_PORT", originalPort)
-		} else {
-			os.Unsetenv("MEERKAT_API_PORT")
-		}
 	}
 
 	return server, cleanup
@@ -93,23 +85,6 @@ func TestNewServer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Save original
-			originalAPIKey := os.Getenv("MEERKAT_API_KEY")
-			defer func() {
-				if originalAPIKey != "" {
-					os.Setenv("MEERKAT_API_KEY", originalAPIKey)
-				} else {
-					os.Unsetenv("MEERKAT_API_KEY")
-				}
-			}()
-
-			// Set test API key
-			if tt.apiKey != "" {
-				os.Setenv("MEERKAT_API_KEY", tt.apiKey)
-			} else {
-				os.Unsetenv("MEERKAT_API_KEY")
-			}
-
 			// Setup database
 			testDB, err := database.ConnectSQLite(":memory:")
 			if err != nil {
@@ -124,15 +99,27 @@ func TestNewServer(t *testing.T) {
 
 			queries := db.New(testDB)
 			entityRepo := entityinfra.NewRepository(queries, queries)
-			monitorRepo := monitoringinfra.NewRepository(queries, queries, testDB, entityRepo)
-			metricsRepo := metricsinfra.NewRepository(queries, queries, testDB, entityRepo)
+			monitorRepo := monitoringinfra.NewRepository(queries, queries, testDB, testDB, entityRepo)
+			metricsRepo := metricsinfra.NewRepository(queries, queries, testDB, testDB, entityRepo)
 
 			logger := logger.DefaultLogger()
 			monitorService := monitoringapp.NewService(logger, monitorRepo, entityRepo)
 			metricsService := metricsapp.NewService(logger, metricsRepo, entityRepo)
 			configLoader := configapp.NewLoader(logger, monitorService, metricsService)
 
-			server, err := NewServer(logger, configLoader, entityRepo, monitorRepo, metricsRepo)
+			// Create runtime config with test API key
+			runtimeCfg := &configapp.RuntimeConfig{
+				APIKey:     tt.apiKey,
+				APIPort:    "8080",
+				DevMode:    false,
+				LogLevel:   "INFO",
+				LogFormat:  "text",
+				LogOutput:  "stdout",
+				DBPath:     ":memory:",
+				ConfigPath: "test-config.json",
+			}
+
+			server, err := NewServer(logger, runtimeCfg, configLoader, entityRepo, monitorRepo, metricsRepo)
 
 			if tt.expectError {
 				if err == nil {
@@ -209,23 +196,6 @@ func TestServer_Start_Shutdown(t *testing.T) {
 }
 
 func TestServer_PortConfiguration(t *testing.T) {
-	// Save original
-	originalAPIKey := os.Getenv("MEERKAT_API_KEY")
-	originalPort := os.Getenv("MEERKAT_API_PORT")
-	defer func() {
-		if originalAPIKey != "" {
-			os.Setenv("MEERKAT_API_KEY", originalAPIKey)
-		}
-		if originalPort != "" {
-			os.Setenv("MEERKAT_API_PORT", originalPort)
-		} else {
-			os.Unsetenv("MEERKAT_API_PORT")
-		}
-	}()
-
-	os.Setenv("MEERKAT_API_KEY", "test-api-key")
-	os.Setenv("MEERKAT_API_PORT", "9090")
-
 	// Setup database
 	testDB, err := database.ConnectSQLite(":memory:")
 	if err != nil {
@@ -240,15 +210,27 @@ func TestServer_PortConfiguration(t *testing.T) {
 
 	queries := db.New(testDB)
 	entityRepo := entityinfra.NewRepository(queries, queries)
-	monitorRepo := monitoringinfra.NewRepository(queries, queries, testDB, entityRepo)
-	metricsRepo := metricsinfra.NewRepository(queries, queries, testDB, entityRepo)
+	monitorRepo := monitoringinfra.NewRepository(queries, queries, testDB, testDB, entityRepo)
+	metricsRepo := metricsinfra.NewRepository(queries, queries, testDB, testDB, entityRepo)
 
 	logger := logger.DefaultLogger()
 	monitorService := monitoringapp.NewService(logger, monitorRepo, entityRepo)
 	metricsService := metricsapp.NewService(logger, metricsRepo, entityRepo)
 	configLoader := configapp.NewLoader(logger, monitorService, metricsService)
 
-	server, err := NewServer(logger, configLoader, entityRepo, monitorRepo, metricsRepo)
+	// Create runtime config with custom port
+	runtimeCfg := &configapp.RuntimeConfig{
+		APIKey:     "test-api-key",
+		APIPort:    "9090",
+		DevMode:    false,
+		LogLevel:   "INFO",
+		LogFormat:  "text",
+		LogOutput:  "stdout",
+		DBPath:     ":memory:",
+		ConfigPath: "test-config.json",
+	}
+
+	server, err := NewServer(logger, runtimeCfg, configLoader, entityRepo, monitorRepo, metricsRepo)
 	if err != nil {
 		t.Fatalf("Failed to create server: %v", err)
 	}

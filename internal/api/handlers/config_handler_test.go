@@ -28,8 +28,8 @@ func setupTestConfigHandler(t *testing.T) (*ConfigHandler, func()) {
 
 	queries := db.New(testDB)
 	entityRepo := entityinfra.NewRepository(queries, queries)
-	monitorRepo := monitoringinfra.NewRepository(queries, queries, testDB, entityRepo)
-	metricsRepo := metricsinfra.NewRepository(queries, queries, testDB, entityRepo)
+	monitorRepo := monitoringinfra.NewRepository(queries, queries, testDB, testDB, entityRepo)
+	metricsRepo := metricsinfra.NewRepository(queries, queries, testDB, testDB, entityRepo)
 
 	logger := logger.DefaultLogger()
 	monitorService := monitoringapp.NewService(logger, monitorRepo, entityRepo)

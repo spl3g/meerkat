@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -31,15 +30,15 @@ type Server struct {
 // NewServer creates a new API server
 func NewServer(
 	logger *logger.Logger,
+	runtimeCfg *configapp.RuntimeConfig,
 	configLoader *configapp.Loader,
 	entityRepo entitydomain.Repository,
 	monitorRepo monitoringdomain.Repository,
 	metricsRepo metricsdomain.Repository,
 ) (*Server, error) {
 	// Validate API key is set
-	apiKey := os.Getenv("MEERKAT_API_KEY")
-	if apiKey == "" {
-		return nil, fmt.Errorf("MEERKAT_API_KEY environment variable is required")
+	if runtimeCfg.APIKey == "" {
+		return nil, fmt.Errorf("API key is required (set MEERKAT_API_KEY or use --api-key flag)")
 	}
 
 	// Initialize services
@@ -53,15 +52,6 @@ func NewServer(
 	heartbeatHandler := handlers.NewHeartbeatHandler(heartbeatService)
 	metricsHandler := handlers.NewMetricsHandler(metricsService)
 
-	// Get port from environment or use default
-	port := os.Getenv("MEERKAT_API_PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	// Check if dev mode is enabled
-	devMode := os.Getenv("MEERKAT_DEV_MODE") == "true"
-
 	// Setup chi router
 	r := chi.NewRouter()
 
@@ -74,7 +64,7 @@ func NewServer(
 	r.Use(httplog.RequestLogger(logger.Logger, nil))
 
 	// Swagger UI (only in dev mode, no auth required)
-	if devMode {
+	if runtimeCfg.DevMode {
 		swaggerHandler := httpSwagger.Handler(
 			httpSwagger.URL("/swagger/doc.json"),
 		)
@@ -86,8 +76,8 @@ func NewServer(
 
 	// API v1 routes (with authentication)
 	r.Route("/api/v1", func(r chi.Router) {
-		// Apply API key auth middleware
-		r.Use(apimiddleware.APIKeyAuth)
+		// Apply API key auth middleware with configured API key
+		r.Use(apimiddleware.APIKeyAuthWithKey(runtimeCfg.APIKey))
 		
 		// Routes
 		r.Post("/config", configHandler.LoadConfig)
@@ -98,7 +88,7 @@ func NewServer(
 	})
 
 	httpServer := &http.Server{
-		Addr:         ":" + port,
+		Addr:         ":" + runtimeCfg.APIPort,
 		Handler:      r,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
@@ -106,8 +96,8 @@ func NewServer(
 	}
 
 	logger.Debug("Server configured",
-		"port", port,
-		"dev_mode", devMode,
+		"port", runtimeCfg.APIPort,
+		"dev_mode", runtimeCfg.DevMode,
 		"middleware", []string{"RequestID", "RealIP", "Recoverer", "httplog"},
 	)
 

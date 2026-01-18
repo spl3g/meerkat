@@ -30,6 +30,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/urfave/cli/v2"
 	_ "modernc.org/sqlite"
 
 	_ "meerkat-v0/docs" // Swagger docs
@@ -47,36 +48,29 @@ import (
 	entityinfra "meerkat-v0/internal/shared/entity/infrastructure"
 )
 
-func help(logger *logger.Logger) {
-	logger.Error("Usage: ./meerkat [config]")
-}
+const version = "1.0"
 
-func run() error {
-	// Initialize logger first
+func run(runtimeCfg *configapp.RuntimeConfig) error {
+	// Initialize logger (after .env is loaded so it can read env vars)
 	appLogger := logger.NewLogger()
 	logger.SetDefaultLogger(appLogger)
 
-	if len(os.Args) < 2 {
-		help(appLogger)
-		return fmt.Errorf("not enough arguments")
-	}
-
-	appLogger.Info("Starting Meerkat", "version", "1.0")
+	appLogger.Info("Starting Meerkat", "version", version)
 
 	sigCtx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	configPath := os.Args[1]
-	appLogger.Debug("Reading configuration file", "path", configPath)
-	rawCfg, err := os.ReadFile(configPath)
+	// Read configuration file
+	appLogger.Debug("Reading configuration file", "path", runtimeCfg.ConfigPath)
+	rawCfg, err := os.ReadFile(runtimeCfg.ConfigPath)
 	if err != nil {
-		appLogger.Error("Failed to read config file", "path", configPath, "err", err)
+		appLogger.Error("Failed to read config file", "path", runtimeCfg.ConfigPath, "err", err)
 		return fmt.Errorf("failed to read config file: %w", err)
 	}
 
 	// Initialize database connections
-	appLogger.Debug("Connecting to database", "file", "observations.db")
-	dbRead, err := database.ConnectSQLite("observations.db")
+	appLogger.Debug("Connecting to database", "file", runtimeCfg.DBPath)
+	dbRead, err := database.ConnectSQLite(runtimeCfg.DBPath)
 	if err != nil {
 		appLogger.Error("Failed to connect to read database", "err", err)
 		return fmt.Errorf("failed to connect to read database: %w", err)
@@ -85,7 +79,7 @@ func run() error {
 	dbRead.SetMaxOpenConns(runtime.NumCPU())
 	appLogger.Debug("Read database configured", "max_open_conns", runtime.NumCPU())
 
-	dbWrite, err := database.ConnectSQLite("observations.db")
+	dbWrite, err := database.ConnectSQLite(runtimeCfg.DBPath)
 	if err != nil {
 		appLogger.Error("Failed to connect to write database", "err", err)
 		return fmt.Errorf("failed to connect to write database: %w", err)
@@ -112,14 +106,14 @@ func run() error {
 
 	// Initialize monitoring services
 	appLogger.Debug("Initializing monitoring service")
-	monitorRepo := monitoringinfra.NewRepository(readDB, writeDB, dbRead, entityRepo)
+	monitorRepo := monitoringinfra.NewRepository(readDB, writeDB, dbRead, dbWrite, entityRepo)
 	monitorLogger := logger.NewLogger()
 	monitorService := monitoringapp.NewService(monitorLogger, monitorRepo, entityRepo)
 	appLogger.Debug("Monitoring service initialized")
 
 	// Initialize metrics services
 	appLogger.Debug("Initializing metrics service")
-	metricsRepo := metricsinfra.NewRepository(readDB, writeDB, dbRead, entityRepo)
+	metricsRepo := metricsinfra.NewRepository(readDB, writeDB, dbRead, dbWrite, entityRepo)
 	metricsLogger := logger.NewLogger()
 	metricsService := metricsapp.NewService(metricsLogger, metricsRepo, entityRepo)
 	appLogger.Debug("Metrics service initialized")
@@ -139,7 +133,7 @@ func run() error {
 
 	// Initialize API server
 	appLogger.Debug("Initializing API server")
-	apiServer, err := apiserver.NewServer(appLogger, configLoader, entityRepo, monitorRepo, metricsRepo)
+	apiServer, err := apiserver.NewServer(appLogger, runtimeCfg, configLoader, entityRepo, monitorRepo, metricsRepo)
 	if err != nil {
 		appLogger.Error("Failed to create API server", "err", err)
 		return fmt.Errorf("failed to create API server: %w", err)
@@ -188,10 +182,95 @@ func run() error {
 }
 
 func main() {
-	if err := run(); err != nil {
+	app := &cli.App{
+		Name:    "meerkat",
+		Usage:   "Meerkat monitoring and metrics API server",
+		Version: version,
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:     "config",
+				Aliases:  []string{"c"},
+				Usage:    "Path to configuration file (required)",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:    "api-key",
+				Usage:   "API key for authentication (overrides MEERKAT_API_KEY)",
+				EnvVars: []string{"MEERKAT_API_KEY"},
+			},
+			&cli.StringFlag{
+				Name:    "port",
+				Usage:   "API server port (overrides MEERKAT_API_PORT, default: 8080)",
+				EnvVars: []string{"MEERKAT_API_PORT"},
+				Value:   "8080",
+			},
+			&cli.BoolFlag{
+				Name:    "dev-mode",
+				Usage:   "Enable development mode (overrides MEERKAT_DEV_MODE)",
+				EnvVars: []string{"MEERKAT_DEV_MODE"},
+			},
+			&cli.StringFlag{
+				Name:    "log-level",
+				Usage:   "Log level: DEBUG, INFO, WARN, ERROR (overrides MEERKAT_LOG_LEVEL, default: INFO)",
+				EnvVars: []string{"MEERKAT_LOG_LEVEL"},
+				Value:   "INFO",
+			},
+			&cli.StringFlag{
+				Name:    "log-format",
+				Usage:   "Log format: json or text (overrides MEERKAT_LOG_FORMAT, default: text)",
+				EnvVars: []string{"MEERKAT_LOG_FORMAT"},
+				Value:   "text",
+			},
+			&cli.StringFlag{
+				Name:    "log-output",
+				Usage:   "Log output: stdout, stderr, or file path (overrides MEERKAT_LOG_OUTPUT, default: stdout)",
+				EnvVars: []string{"MEERKAT_LOG_OUTPUT"},
+				Value:   "stdout",
+			},
+			&cli.StringFlag{
+				Name:    "db-path",
+				Usage:   "Database file path (overrides MEERKAT_DB_PATH, default: observations.db)",
+				EnvVars: []string{"MEERKAT_DB_PATH"},
+				Value:   "observations.db",
+			},
+			&cli.StringFlag{
+				Name:    "env-file",
+				Usage:   "Path to .env file (default: .env in current directory)",
+				Value:   ".env",
+			},
+		},
+		Action: func(c *cli.Context) error {
+			// Load .env file first (before any other initialization)
+			// Use a temporary logger for .env loading messages
+			tempLogger := logger.DefaultLogger()
+			envFile := c.String("env-file")
+			configapp.LoadEnvFile(tempLogger, envFile)
+
+			// Build runtime configuration from CLI flags and environment
+			runtimeCfg := configapp.LoadRuntimeConfig(
+				c.String("api-key"),
+				c.String("port"),
+				c.String("log-level"),
+				c.String("log-format"),
+				c.String("log-output"),
+				c.String("db-path"),
+				c.String("config"),
+				c.Bool("dev-mode"),
+			)
+
+			// Validate configuration
+			if err := runtimeCfg.Validate(); err != nil {
+				return fmt.Errorf("configuration error: %w", err)
+			}
+
+			return run(runtimeCfg)
+		},
+	}
+
+	if err := app.Run(os.Args); err != nil {
 		// Use default logger for final error message if run() failed early
-		logger := logger.DefaultLogger()
-		logger.Error("Application error", "err", err)
+		log := logger.DefaultLogger()
+		log.Error("Application error", "err", err)
 		os.Exit(1)
 	}
 }
