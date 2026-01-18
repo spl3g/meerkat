@@ -86,6 +86,8 @@ func BuildMonitor(serviceID utils.EntityID, rawCfg []byte) (utils.EntityID, Moni
 	switch cfg.Type {
 	case "tcp":
 		monitor = &TCPMonitor{}
+	case "http":
+		monitor = &HTTPMonitor{}
 	default:
 		return id, nil, validation.NewValidationError(map[string]string{
 			"type": "unknown monitor type: " + cfg.Type,
