@@ -45,3 +45,35 @@ func (r *Repository) InsertEntity(ctx context.Context, canonID string) (int64, e
 	return id, nil
 }
 
+func (r *Repository) ListEntities(ctx context.Context) ([]entitydomain.Entity, error) {
+	entities, err := r.readDB.ListEntities(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]entitydomain.Entity, len(entities))
+	for i, e := range entities {
+		result[i] = entitydomain.Entity{
+			ID:          e.ID,
+			CanonicalID: e.CanonicalID,
+		}
+	}
+
+	return result, nil
+}
+
+func (r *Repository) GetEntity(ctx context.Context, canonicalID string) (*entitydomain.Entity, error) {
+	entity, err := r.readDB.GetEntityByCanonicalID(ctx, canonicalID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, entitydomain.ErrIDNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &entitydomain.Entity{
+		ID:          entity.ID,
+		CanonicalID: entity.CanonicalID,
+	}, nil
+}
+

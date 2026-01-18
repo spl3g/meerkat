@@ -1,0 +1,253 @@
+basePath: /api/v1
+definitions:
+  application.EntityResponse:
+    properties:
+      canonical_id:
+        type: string
+      id:
+        type: integer
+    type: object
+  application.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  application.HeartbeatResponse:
+    properties:
+      error:
+        type: string
+      monitor_id:
+        type: string
+      successful:
+        type: boolean
+      timestamp:
+        type: string
+    type: object
+  application.LoadConfigRequest:
+    type: object
+  application.MetricsSampleResponse:
+    properties:
+      entity_id:
+        type: string
+      labels:
+        additionalProperties:
+          type: string
+        type: object
+      name:
+        type: string
+      timestamp:
+        type: string
+      type:
+        type: string
+      value:
+        type: number
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: This is the Meerkat monitoring and metrics API server.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: Meerkat API
+  version: "1.0"
+paths:
+  /config:
+    post:
+      consumes:
+      - application/json
+      description: Load a new monitoring and metrics configuration
+      parameters:
+      - description: Configuration object
+        in: body
+        name: config
+        required: true
+        schema:
+          $ref: '#/definitions/application.LoadConfigRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/application.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Load configuration
+      tags:
+      - config
+  /entities:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of all entities
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/application.EntityResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/application.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List all entities
+      tags:
+      - entities
+  /entities/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Get a specific entity by its canonical ID
+      parameters:
+      - description: Entity Canonical ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/application.EntityResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/application.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/application.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/application.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get entity by ID
+      tags:
+      - entities
+  /heartbeats:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of heartbeats with optional filtering
+      parameters:
+      - description: Filter by entity ID
+        in: query
+        name: entity_id
+        type: string
+      - description: Start time (RFC3339)
+        in: query
+        name: from
+        type: string
+      - description: End time (RFC3339)
+        in: query
+        name: to
+        type: string
+      - description: Filter by success status
+        in: query
+        name: successful
+        type: boolean
+      - description: Limit results
+        in: query
+        name: limit
+        type: integer
+      - description: Offset results
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/application.HeartbeatResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/application.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List heartbeats
+      tags:
+      - heartbeats
+  /metrics:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of metrics samples with optional filtering
+      parameters:
+      - description: Filter by entity ID
+        in: query
+        name: entity_id
+        type: string
+      - description: Start time (RFC3339)
+        in: query
+        name: from
+        type: string
+      - description: End time (RFC3339)
+        in: query
+        name: to
+        type: string
+      - description: Filter by metric name
+        in: query
+        name: name
+        type: string
+      - description: Filter by metric type
+        in: query
+        name: type
+        type: string
+      - description: Limit results
+        in: query
+        name: limit
+        type: integer
+      - description: Offset results
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/application.MetricsSampleResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/application.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List metrics samples
+      tags:
+      - metrics
+securityDefinitions:
+  ApiKeyAuth:
+    description: API Key authentication
+    in: header
+    name: X-API-Key
+    type: apiKey
+swagger: "2.0"
