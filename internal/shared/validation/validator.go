@@ -61,6 +61,11 @@ func (e *DuplicateFoundError) Error() string {
 	return fmt.Sprintf("duplicate entity in '%s'", e.Path)
 }
 
+func (e *DuplicateFoundError) PrependPath(path string) ConfigError {
+	e.Path = fmt.Sprint(path, ".", e.Path)
+	return e
+}
+
 type NoNameError struct {
 	Path  string
 	Index int
