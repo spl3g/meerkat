@@ -6,6 +6,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 )
 
@@ -15,14 +16,19 @@ type Entity struct {
 }
 
 type Heartbeat struct {
-	ObsID      int64
+	ID         int64
+	EntityID   int64
+	Ts         time.Time
 	Successful bool
 	Error      sql.NullString
 }
 
-type Observation struct {
+type Metric struct {
 	ID       int64
-	EntityID sql.NullInt64
+	EntityID int64
 	Ts       time.Time
-	Kind     string
+	Name     string
+	Type     string
+	Value    float64
+	Labels   json.RawMessage
 }

@@ -8,23 +8,10 @@ import (
 	"net"
 	"regexp"
 	"strconv"
-	"sync"
 	"time"
 
 	"meerkat-v0/utils"
 )
-
-type Monitor interface {
-	Check(ctx context.Context) error
-	Configure(id utils.EntityID, cfg []byte) error
-	Eq(newCfg []byte) (bool, error)
-}
-
-type MonitorConfig struct {
-	Type     string `json:"type"`
-	Name     string `json:"name"`
-	Interval uint16 `json:"interval"`
-}
 
 func NewMonitorID(instance, service, monType, name string) utils.EntityID {
 	return utils.EntityID{
@@ -47,252 +34,62 @@ func NewMonitorIDFromServiceID(serviceID utils.EntityID, monType, name string) u
 	)
 }
 
-func (c *MonitorConfig) Valid(ctx context.Context) map[string]string {
-	problems := make(map[string]string, 3)
-
-	err := utils.CheckName(c.Name)
+func BuildMonitor(serviceID utils.EntityID, rawCfg []byte) (utils.EntityID, *EntityInstance, error) {
+	var id utils.EntityID
+	var cfg EntityConfig
+	err := json.Unmarshal(rawCfg, &cfg)
 	if err != nil {
-		problems["name"] = err.Error()
+		return id, nil, err
 	}
 
-	if len(c.Type) == 0 {
-		problems["type"] = "'type' is required"
-	} else {
-		// TODO: Replace with modules
-		monitorTypes := []string{"tcp"}
-		exists := false
-		for _, mtype := range monitorTypes {
-			if mtype == c.Type {
-				exists = true
-			}
-		}
-
-		if !exists {
-			problems["type"] = fmt.Sprintf("'%s' type does not exist", c.Type)
-		}
+	problems := cfg.Valid(context.TODO())
+	if len(problems) > 0 {
+		return id, nil, NewValidationError(problems, serviceID.Labels["name"], cfg.Name)
 	}
 
-	if c.Interval == 0 {
-		problems["interval"] = "interval should be more than zero"
+	id = NewMonitorIDFromServiceID(serviceID, cfg.Type, cfg.Name)
+
+	// TODO: Replace with modules
+	var entity Entity
+	switch cfg.Type {
+	case "cpu":
+		entity = &TCPMonitor{}
+	default:
+		return id, nil, fmt.Errorf("unknown monitor type: %s", cfg.Type)
 	}
 
-	return problems
-}
-
-type monitorInstance struct {
-	mon Monitor
-	cfg MonitorConfig
-
-	ctx     context.Context
-	cancel  context.CancelFunc
-	running bool
-}
-
-type MonitorService struct {
-	heartbeatRepo HeartbeatRepo
-
-	mu sync.RWMutex
-	// Monitor ID to monitor instance
-	monitors map[string]*monitorInstance
-	// Service ID to a list of monitor ids
-	services map[string][]string
-
-	wg sync.WaitGroup
-
-	ctx    context.Context
-	cancel context.CancelFunc
-}
-
-func NewMonitorService(hRepo HeartbeatRepo) *MonitorService {
-	ctx, cancel := context.WithCancel(context.Background())
-	return &MonitorService{
-		heartbeatRepo: hRepo,
-		monitors:      make(map[string]*monitorInstance),
-		ctx:           ctx,
-		cancel:        cancel,
-	}
-}
-
-func (m *MonitorService) DiffMonitors(serviceID utils.EntityID, rawConfigs []json.RawMessage) (*ConfigDiff, error) {
-	add := make([]string, 10)
-	update := make([]string, 10)
-	delete := make([]string, 10)
-
-	newConfigs := make(map[string]MonitorConfig)
-	for _, rawCfg := range rawConfigs {
-		var cfg MonitorConfig
-		err := json.Unmarshal(rawCfg, &cfg)
-		if err != nil {
-			return nil, err
-		}
-
-		problems := cfg.Valid(context.TODO())
-		if len(problems) > 0 {
-			return nil, NewValidationError(problems, serviceID.Labels["name"], cfg.Name)
-		}
-
-		id := NewMonitorIDFromServiceID(serviceID, cfg.Type, cfg.Name)
-
-		oldCfg, ok := m.monitors[id.Canonical()]
-		if !ok {
-			add = append(add, id.Canonical())
-			continue
-		}
-
-		ok, err = oldCfg.mon.Eq(rawCfg)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			update = append(update, id.Canonical())
-		}
-		newConfigs[id.Canonical()] = cfg
-	}
-
-	for id := range m.monitors {
-		_, ok := newConfigs[id]
-		if ok {
-			continue
-		}
-		delete = append(delete, id)
-	}
-
-	return &ConfigDiff{
-		Add:    add,
-		Update: update,
-		Delete: delete,
-	}, nil
-}
-
-func (m *MonitorService) LoadService(serviceID utils.EntityID, rawConfigs []json.RawMessage) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	newMonitors, err := m.buildMonitors(serviceID, rawConfigs)
+	err = entity.Configure(id, rawCfg)
 	if err != nil {
-		return err
+		return id, nil, err
 	}
 
-	for _, id := range m.services[serviceID.Canonical()] {
-		_, ok := newMonitors[id]
-		if !ok {
-			m.stopMonitorUnsynced(id)
-			delete(m.monitors, id)
-		}
-	}
-
-	for id, newMonitor := range newMonitors {
-		oldMonitor, ok := m.monitors[id]
-		if ok && oldMonitor.running {
-			m.stopMonitorUnsynced(id)
-		}
-
-		ctx, cancel := context.WithCancel(m.ctx)
-
-		newMonitor.ctx = ctx
-		newMonitor.cancel = cancel
-
-		m.monitors[id] = newMonitor
-
-		m.startMonitorUnsynced(id)
-	}
-
-	return nil
+	return id, NewEntityInstance(id, entity, cfg, rawCfg), nil
 }
 
-func (m *MonitorService) buildMonitors(serviceID utils.EntityID, rawConfigs []json.RawMessage) (map[string]*monitorInstance, error) {
-	result := make(map[string]*monitorInstance)
-
-	for i, rawMonitorCfg := range rawConfigs {
-		var monitorCfg MonitorConfig
-		err := json.Unmarshal(rawMonitorCfg, &monitorCfg)
-		if err != nil {
-			return nil, err
-		}
-
-		// TODO: rewrite to return path
-		problems := monitorCfg.Valid(context.TODO())
-		if len(problems) > 0 {
-			path := make([]string, 0, 2)
-			if len(monitorCfg.Name) == 0 {
-				path = append(path, fmt.Sprintf("%s[%d]", serviceID.Labels["name"], i))
-			} else {
-				path = append(path, serviceID.Labels["name"])
-				path = append(path, monitorCfg.Name)
-			}
-			return nil, NewValidationError(problems, path...)
-		}
-
-		monitorID := NewMonitorIDFromServiceID(serviceID, monitorCfg.Type, monitorCfg.Name)
-
-		// TODO: Replace with modules
-		var monitor Monitor
-		switch monitorCfg.Type {
-		case "tcp":
-			monitor = &TCPMonitor{}
-		default:
-			return nil, fmt.Errorf("unknown monitor type: %s", monitorCfg.Type)
-		}
-
-		err = monitor.Configure(monitorID, rawMonitorCfg)
-		if err != nil {
-			return nil, err
-		}
-
-		result[monitorID.Canonical()] = &monitorInstance{
-			mon: monitor,
-			cfg: monitorCfg,
-		}
-	}
-
-	return result, nil
-}
-
-func (m *MonitorService) startMonitorUnsynced(monitorID string) {
-	m.wg.Add(1)
-	go func() {
-		m.runMonitor(monitorID)
-		m.wg.Done()
-	}()
-}
-
-func (m *MonitorService) stopMonitorUnsynced(monitorID string) {
-	monitor := m.monitors[monitorID]
-	if !monitor.running {
-		return
-	}
-	monitor.cancel()
-	monitor.running = false
-}
-
-func (m *MonitorService) runMonitor(monitorID string) {
-	m.mu.RLock()
-	interval := m.monitors[monitorID].cfg.Interval
+func RunMonitor(heartbeatRepo HeartbeatRepo, logger *utils.Logger, inst *EntityInstance) {
+	interval := inst.Cfg.Interval
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 	defer ticker.Stop()
-
-	monitor := m.monitors[monitorID]
-	m.mu.RUnlock()
 
 	for {
 		select {
 		case <-ticker.C:
-			err := monitor.mon.Check(monitor.ctx)
+			err := inst.Ent.Run(inst.ctx)
 			if errors.Is(err, context.Canceled) {
 				continue
 			}
-			m.heartbeatRepo.InsertHeartbeat(monitor.ctx, Heartbeat{
-				MonitorID: monitorID,
+			heartbeatRepo.InsertHeartbeat(inst.ctx, Heartbeat{
+				MonitorID: inst.ID.Canonical(),
 				Timestamp: time.Now(),
 				Error:     err,
 			})
-		case <-monitor.ctx.Done():
+		case <-inst.ctx.Done():
 			return
 		}
 	}
 }
 
-func (m *MonitorService) Stop(ctx context.Context) error {
+func (m *EntityService) Stop(ctx context.Context) error {
 	m.cancel()
 
 	done := make(chan struct{})
@@ -349,7 +146,7 @@ type TCPMonitor struct {
 	cfg TCPConfig
 }
 
-func (m *TCPMonitor) Check(parentCtx context.Context) error {
+func (m *TCPMonitor) Run(parentCtx context.Context) error {
 	ctx, cancel := context.WithTimeout(parentCtx, time.Duration(m.cfg.Timeout)*time.Second)
 	defer cancel()
 	return PingTCP(ctx, m.cfg.Hostname, m.cfg.Port)

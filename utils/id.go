@@ -8,22 +8,7 @@ import (
 	"strings"
 )
 
-const IDSeparator = '|'
-
-func ConcatIDs(pre string, post string) string {
-	return fmt.Sprintf("%s%c%s", pre, IDSeparator, post)
-}
-
-func ConstructID(names ...string) string {
-	var builder strings.Builder
-	builder.Write([]byte(names[0]))
-	for _, name := range names[1:] {
-		builder.WriteByte(IDSeparator)
-		builder.Write([]byte(name))
-	}
-
-	return builder.String()
-}
+const IDSeparator = "|"
 
 var EmptyNameError = errors.New("'name' is required")
 
@@ -40,7 +25,7 @@ func formatKV(w io.Writer, key string, value string) (int, error) {
 }
 
 func printSep(w io.Writer) (int, error) {
-	return fmt.Fprintf(w, "%c", IDSeparator)
+	return fmt.Fprintf(w, "%s", IDSeparator)
 }
 
 type EntityID struct {
@@ -49,10 +34,11 @@ type EntityID struct {
 }
 
 func (e EntityID) Canonical() string {
-	keys := make([]string, 0, len(e.Labels))
+	keys := make([]string, 0, len(e.Labels)+1)
 	for k := range e.Labels {
 		keys = append(keys, k)
 	}
+	keys = append(keys, "kind")
 
 	sort.Strings(keys)
 
@@ -61,8 +47,30 @@ func (e EntityID) Canonical() string {
 		if i > 0 {
 			printSep(&b)
 		}
+		if k == "kind" {
+			formatKV(&b, k, e.Kind)
+			continue
+		}
 		formatKV(&b, k, e.Labels[k])
 	}
 
 	return b.String()
+}
+
+func ParseEntityID(str string) EntityID {
+	e := EntityID{
+		Kind:   "",
+		Labels: make(map[string]string),
+	}
+
+	labels := strings.SplitSeq(str, IDSeparator)
+	for label := range labels {
+		kv := strings.Split(label, "=")
+		if kv[0] == "kind" {
+			e.Kind = kv[1]
+			continue
+		}
+		e.Labels[kv[0]] = kv[1]
+	}
+	return e
 }

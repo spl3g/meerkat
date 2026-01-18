@@ -7,31 +7,98 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
+	"time"
 )
 
-const getAllEntityIDs = `-- name: GetAllEntityIDs :many
-select id, canonical_id from entities
+const getCanonicalID = `-- name: GetCanonicalID :one
+select canonical_id from entities
+ where id = ?
 `
 
-func (q *Queries) GetAllEntityIDs(ctx context.Context) ([]Entity, error) {
-	rows, err := q.db.QueryContext(ctx, getAllEntityIDs)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Entity
-	for rows.Next() {
-		var i Entity
-		if err := rows.Scan(&i.ID, &i.CanonicalID); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+func (q *Queries) GetCanonicalID(ctx context.Context, id int64) (string, error) {
+	row := q.db.QueryRowContext(ctx, getCanonicalID, id)
+	var canonical_id string
+	err := row.Scan(&canonical_id)
+	return canonical_id, err
+}
+
+const getEntityID = `-- name: GetEntityID :one
+select id from entities
+ where canonical_id = ?
+`
+
+func (q *Queries) GetEntityID(ctx context.Context, canonicalID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getEntityID, canonicalID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const insertEntity = `-- name: InsertEntity :one
+insert into entities(canonical_id)
+values (?)
+returning id
+`
+
+func (q *Queries) InsertEntity(ctx context.Context, canonicalID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, insertEntity, canonicalID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const insertHeartbeat = `-- name: InsertHeartbeat :one
+insert into heartbeat(entity_id, ts, successful, error)
+values (?, ?, ?, ?)
+returning id
+`
+
+type InsertHeartbeatParams struct {
+	EntityID   int64
+	Ts         time.Time
+	Successful bool
+	Error      sql.NullString
+}
+
+func (q *Queries) InsertHeartbeat(ctx context.Context, arg InsertHeartbeatParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, insertHeartbeat,
+		arg.EntityID,
+		arg.Ts,
+		arg.Successful,
+		arg.Error,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const insertMetrics = `-- name: InsertMetrics :one
+insert into metrics(entity_id, ts, name, type, value, labels)
+values (?, ?, ?, ?, ?, ?)
+returning id
+`
+
+type InsertMetricsParams struct {
+	EntityID int64
+	Ts       time.Time
+	Name     string
+	Type     string
+	Value    float64
+	Labels   json.RawMessage
+}
+
+func (q *Queries) InsertMetrics(ctx context.Context, arg InsertMetricsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, insertMetrics,
+		arg.EntityID,
+		arg.Ts,
+		arg.Name,
+		arg.Type,
+		arg.Value,
+		arg.Labels,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }

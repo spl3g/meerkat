@@ -2,16 +2,25 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"sync"
 	"time"
 
+	_ "modernc.org/sqlite"
+
+	"meerkat-v0/db"
 	"meerkat-v0/utils"
 )
+
+//go:embed schema.sql
+var ddl string
 
 func help() {
 	fmt.Fprintln(os.Stderr, "./meerkat [config]")
@@ -32,12 +41,45 @@ func run() error {
 		return err
 	}
 
-	hr := WriterHeartbeat{os.Stdout}
+	dbRead, err := connectSqliteDb("observations.db")
+	if err != nil {
+		return err
+	}
+	defer dbRead.Close()
+	dbRead.SetMaxOpenConns(runtime.NumCPU())
 
-	ms := NewMonitorService(&hr)
+	dbWrite, err := connectSqliteDb("observations.db")
+	if err != nil {
+		return err
+	}
+	defer dbWrite.Close()
+	dbWrite.SetMaxOpenConns(1)
 
-	meerkat := NewMeerkat(ms)
-	err = meerkat.LoadConfig(rawCfg)
+	_, err = dbWrite.ExecContext(sigCtx, ddl)
+	if err != nil {
+		return err
+	}
+
+	readDB := db.New(dbRead)
+	writeDB := db.New(dbWrite)
+
+	entityRepo := NewSqliteEntityRepo(readDB, writeDB)
+	heartbeatRepo := NewSqliteHeartbeatRepo(readDB, writeDB, entityRepo)
+	metricsRepo := NewSqliteMetricsRepo(readDB, writeDB, entityRepo)
+
+	monitorRunner := func(logger *utils.Logger, inst *EntityInstance) {
+		RunMonitor(heartbeatRepo, logger, inst)
+	}
+
+	metricsBuilder := func(serviceID utils.EntityID, rawCfg []byte) (utils.EntityID, *EntityInstance, error) {
+		return BuildMetrics(metricsRepo, serviceID, rawCfg)
+	}
+
+	monitorService := NewEntityService("monitor", BuildMonitor, monitorRunner, entityRepo)
+	metricsSerivce := NewEntityService("metrics", metricsBuilder, RunMetrics, entityRepo)
+
+	meerkat := NewMeerkat([]*EntityService{monitorService, metricsSerivce})
+	err = meerkat.LoadConfig(sigCtx, rawCfg)
 	if err != nil {
 		return err
 	}
@@ -55,6 +97,10 @@ func main() {
 	}
 }
 
+func connectSqliteDb(dbName string) (*sql.DB, error) {
+	return sql.Open("sqlite", dbName)
+}
+
 type ConfigDiff struct {
 	Add    []string
 	Update []string
@@ -62,8 +108,8 @@ type ConfigDiff struct {
 }
 
 type InstanceConfig struct {
-	Name     string          `json:"name"`
-	Services []ServiceConfig `json:"services"`
+	Name     string            `json:"name"`
+	Services []json.RawMessage `json:"services"`
 }
 
 func (c *InstanceConfig) Valid(ctx context.Context) map[string]string {
@@ -78,20 +124,11 @@ func (c *InstanceConfig) Valid(ctx context.Context) map[string]string {
 		problems["services"] = "services cannot be empty"
 	}
 
-	for i, service := range c.Services {
-		serviceProblems := service.Valid(ctx)
-		for field, problem := range serviceProblems {
-			problemName := fmt.Sprintf("services[%d].%s", i, field)
-			problems[problemName] = problem
-		}
-	}
-
 	return problems
 }
 
 type ServiceConfig struct {
-	Name     string            `json:"name"`
-	Monitors []json.RawMessage `json:"monitors"`
+	Name string `json:"name"`
 }
 
 func (c *ServiceConfig) Valid(ctx context.Context) map[string]string {
@@ -116,20 +153,24 @@ func NewServiceID(instance string, name string) utils.EntityID {
 }
 
 type Meerkat struct {
-	monitors *MonitorService
+	services map[string]*EntityService
 
 	rawCfg []byte
 	cfg    InstanceConfig
 	mu     sync.RWMutex
 }
 
-func NewMeerkat(monitorService *MonitorService) *Meerkat {
+func NewMeerkat(services []*EntityService) *Meerkat {
+	serviceMap := make(map[string]*EntityService, len(services))
+	for _, service := range services {
+		serviceMap[service.Name] = service
+	}
 	return &Meerkat{
-		monitors: monitorService,
+		services: serviceMap,
 	}
 }
 
-func (m *Meerkat) LoadConfig(newConfig []byte) error {
+func (m *Meerkat) LoadConfig(ctx context.Context, newConfig []byte) error {
 	var cfg InstanceConfig
 	err := json.Unmarshal(newConfig, &cfg)
 	if err != nil {
@@ -144,15 +185,47 @@ func (m *Meerkat) LoadConfig(newConfig []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	for _, service := range cfg.Services {
-		id := NewServiceID(cfg.Name, service.Name)
-		err := m.monitors.LoadService(id, service.Monitors)
-		var val *ValidationError
-		if errors.As(err, &val) {
-			val.PrependPath(cfg.Name)
+	for i, service := range cfg.Services {
+		var servCfg map[string]json.RawMessage
+		err := json.Unmarshal(service, &servCfg)
+		if err != nil {
 			return err
-		} else if err != nil {
+		}
+
+		anyName, exists := servCfg["name"]
+		if !exists {
+			err := NewNoNameError(cfg.Name)
+			err.SetIndex(i)
 			return err
+		}
+		var name string
+		err = json.Unmarshal(anyName, &name)
+		if !exists || err != nil {
+			err := NewNoNameError(cfg.Name)
+			err.SetIndex(i)
+			return err
+		}
+
+		id := NewServiceID(cfg.Name, name)
+		for name, entService := range m.services {
+			var configs []json.RawMessage
+			rawConfigs, exists := servCfg[name]
+			if !exists {
+				continue
+			}
+
+			err = json.Unmarshal(rawConfigs, &configs)
+			if err != nil {
+				return err
+			}
+			err = entService.LoadService(ctx, id, configs)
+			var val ConfigError
+			if errors.As(err, &val) {
+				val.PrependPath(cfg.Name)
+				return err
+			} else if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -163,17 +236,19 @@ func (m *Meerkat) Stop(ctx context.Context) error {
 	var wg sync.WaitGroup
 
 	errChan := make(chan error, 1)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		err := m.monitors.Stop(ctx)
-		if err != nil {
-			select {
-			case errChan <- err:
-			default:
+	for _, service := range m.services {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := service.Stop(ctx)
+			if err != nil {
+				select {
+				case errChan <- err:
+				default:
+				}
 			}
-		}
-	}()
+		}()
+	}
 
 	done := make(chan struct{})
 	go func() {
