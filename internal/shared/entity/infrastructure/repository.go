@@ -5,16 +5,16 @@ import (
 	"database/sql"
 	"errors"
 
-	"meerkat-v0/db"
+	"meerkat-v0/internal/infrastructure/database/queries"
 	entitydomain "meerkat-v0/internal/shared/entity/domain"
 )
 
 type Repository struct {
-	readDB  *db.Queries
-	writeDB *db.Queries
+	readDB  *queries.Queries
+	writeDB *queries.Queries
 }
 
-func NewRepository(readDB *db.Queries, writeDB *db.Queries) *Repository {
+func NewRepository(readDB *queries.Queries, writeDB *queries.Queries) *Repository {
 	return &Repository{
 		readDB:  readDB,
 		writeDB: writeDB,

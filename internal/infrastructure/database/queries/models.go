@@ -2,7 +2,7 @@
 // versions:
 //   sqlc v1.30.0
 
-package db
+package queries
 
 import (
 	"database/sql"
@@ -32,3 +32,4 @@ type Metric struct {
 	Value    float64
 	Labels   json.RawMessage
 }
+

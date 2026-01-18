@@ -5,22 +5,22 @@ import (
 	"database/sql"
 	"fmt"
 
-	"meerkat-v0/db"
+	"meerkat-v0/internal/infrastructure/database/queries"
 	"meerkat-v0/internal/monitoring/domain"
 	entitydomain "meerkat-v0/internal/shared/entity/domain"
 )
 
 // Repository implements the monitor repository interface using SQLite
 type Repository struct {
-	readDB     *db.Queries
-	writeDB    *db.Queries
+	readDB     *queries.Queries
+	writeDB    *queries.Queries
 	rawReadDB  *sql.DB
 	rawWriteDB *sql.DB
 	entityRepo entitydomain.Repository
 }
 
 // NewRepository creates a new SQLite monitor repository
-func NewRepository(readDB *db.Queries, writeDB *db.Queries, rawReadDB *sql.DB, rawWriteDB *sql.DB, entityRepo entitydomain.Repository) *Repository {
+func NewRepository(readDB *queries.Queries, writeDB *queries.Queries, rawReadDB *sql.DB, rawWriteDB *sql.DB, entityRepo entitydomain.Repository) *Repository {
 	return &Repository{
 		readDB:     readDB,
 		writeDB:    writeDB,
@@ -55,7 +55,7 @@ func (r *Repository) InsertHeartbeat(ctx context.Context, heartbeat domain.Heart
 		error.Valid = true
 	}
 
-	_, err = txQueries.InsertHeartbeat(ctx, db.InsertHeartbeatParams{
+	_, err = txQueries.InsertHeartbeat(ctx, queries.InsertHeartbeatParams{
 		EntityID:   eId,
 		Ts:         heartbeat.Timestamp,
 		Successful: successful,
@@ -129,7 +129,7 @@ limit ?5 offset ?6`
 	// Use sqlc-generated row type for type-safe scanning
 	var heartbeats []domain.Heartbeat
 	for rows.Next() {
-		var row db.ListHeartbeatsRow
+		var row queries.ListHeartbeatsRow
 		if err := rows.Scan(
 			&row.ID,
 			&row.EntityID,

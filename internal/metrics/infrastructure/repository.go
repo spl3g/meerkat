@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 
-	"meerkat-v0/db"
+	"meerkat-v0/internal/infrastructure/database/queries"
 	"meerkat-v0/internal/metrics/domain"
 	"meerkat-v0/pkg/utils"
 	entitydomain "meerkat-v0/internal/shared/entity/domain"
@@ -13,15 +13,15 @@ import (
 
 // Repository implements the metrics repository interface using SQLite
 type Repository struct {
-	readDB     *db.Queries
-	writeDB    *db.Queries
+	readDB     *queries.Queries
+	writeDB    *queries.Queries
 	rawReadDB  *sql.DB
 	rawWriteDB *sql.DB
 	entityRepo entitydomain.Repository
 }
 
 // NewRepository creates a new SQLite metrics repository
-func NewRepository(readDB *db.Queries, writeDB *db.Queries, rawReadDB *sql.DB, rawWriteDB *sql.DB, entityRepo entitydomain.Repository) *Repository {
+func NewRepository(readDB *queries.Queries, writeDB *queries.Queries, rawReadDB *sql.DB, rawWriteDB *sql.DB, entityRepo entitydomain.Repository) *Repository {
 	return &Repository{
 		readDB:     readDB,
 		writeDB:    writeDB,
@@ -53,7 +53,7 @@ func (r *Repository) InsertSample(ctx context.Context, sample domain.Sample) err
 		return err
 	}
 
-	_, err = txQueries.InsertMetrics(ctx, db.InsertMetricsParams{
+	_, err = txQueries.InsertMetrics(ctx, queries.InsertMetricsParams{
 		EntityID: eId,
 		Ts:       sample.Timestamp,
 		Type:     string(sample.Type),
@@ -136,7 +136,7 @@ limit ?6 offset ?7`
 	// Use sqlc-generated row type for type-safe scanning
 	var samples []domain.Sample
 	for rows.Next() {
-		var row db.ListMetricsRow
+		var row queries.ListMetricsRow
 		if err := rows.Scan(
 			&row.ID,
 			&row.EntityID,

@@ -3,7 +3,7 @@
 //   sqlc v1.30.0
 // source: query.sql
 
-package db
+package queries
 
 import (
 	"context"
@@ -283,3 +283,4 @@ func (q *Queries) ListMetrics(ctx context.Context, arg ListMetricsParams) ([]Lis
 	}
 	return items, nil
 }
+

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"meerkat-v0/db"
+	"meerkat-v0/internal/infrastructure/database/queries"
 	entitydomain "meerkat-v0/internal/shared/entity/domain"
 	"meerkat-v0/internal/infrastructure/database"
 	"meerkat-v0/internal/schema"
@@ -23,8 +23,8 @@ func setupTestRepository(t *testing.T) (*Repository, func()) {
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
-	queries := db.New(testDB)
-	repo := NewRepository(queries, queries)
+	q := queries.New(testDB)
+	repo := NewRepository(q, q)
 
 	cleanup := func() {
 		testDB.Close()
