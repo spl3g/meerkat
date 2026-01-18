@@ -2,10 +2,22 @@ package handlers
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	api "meerkat-v0/internal/api/application"
 )
+
+// getLogger extracts the logger from the request context
+// Falls back to slog.Default() if not found
+func getLogger(r *http.Request) *slog.Logger {
+	if ctxLogger := r.Context().Value("logger"); ctxLogger != nil {
+		if l, ok := ctxLogger.(*slog.Logger); ok {
+			return l
+		}
+	}
+	return slog.Default()
+}
 
 // respondJSON sends a JSON response
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {

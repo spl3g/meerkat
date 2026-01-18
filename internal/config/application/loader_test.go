@@ -40,7 +40,7 @@ func setupTestLoader(t *testing.T) (*Loader, func()) {
 	logger := logger.DefaultLogger()
 	monitorService := monitoringapp.NewService(logger, monitorRepo, entityRepo)
 	metricsService := metricsapp.NewService(logger, metricsRepo, entityRepo)
-	loader := NewLoader(monitorService, metricsService)
+	loader := NewLoader(logger, monitorService, metricsService)
 
 	cleanup := func() {
 		testDB.Close()

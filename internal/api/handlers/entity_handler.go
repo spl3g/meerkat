@@ -2,7 +2,8 @@ package handlers
 
 import (
 	"net/http"
-	"strings"
+
+	"github.com/go-chi/chi/v5"
 
 	api "meerkat-v0/internal/api/application"
 )
@@ -30,17 +31,16 @@ func NewEntityHandler(service *api.EntityService) *EntityHandler {
 // @Security     ApiKeyAuth
 // @Router       /entities [get]
 func (h *EntityHandler) ListEntities(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+	logger := getLogger(r)
 
 	entities, err := h.service.ListEntities(r.Context())
 	if err != nil {
+		logger.Error("Failed to list entities", "err", err)
 		respondJSONError(w, http.StatusInternalServerError, "Failed to list entities: "+err.Error())
 		return
 	}
 
+	logger.Debug("Listed entities", "count", len(entities))
 	respondJSON(w, http.StatusOK, entities)
 }
 
@@ -58,28 +58,29 @@ func (h *EntityHandler) ListEntities(w http.ResponseWriter, r *http.Request) {
 // @Security     ApiKeyAuth
 // @Router       /entities/{id} [get]
 func (h *EntityHandler) GetEntity(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+	logger := getLogger(r)
 
-	// Extract canonical ID from path
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/entities/")
-	if path == "" || path == r.URL.Path {
+	// Extract canonical ID from chi URL parameter
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		logger.Warn("Missing entity ID in request")
 		respondJSONError(w, http.StatusBadRequest, "Missing entity ID")
 		return
 	}
 
-	entity, err := h.service.GetEntity(r.Context(), path)
+	entity, err := h.service.GetEntity(r.Context(), id)
 	if err != nil {
 		if err.Error() == "could not find entity with this id" {
+			logger.Debug("Entity not found", "id", id)
 			respondJSONError(w, http.StatusNotFound, "Entity not found")
 			return
 		}
+		logger.Error("Failed to get entity", "id", id, "err", err)
 		respondJSONError(w, http.StatusInternalServerError, "Failed to get entity: "+err.Error())
 		return
 	}
 
+	logger.Debug("Retrieved entity", "id", id)
 	respondJSON(w, http.StatusOK, entity)
 }
 

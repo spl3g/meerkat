@@ -52,9 +52,12 @@ func (s *Service) LoadService(ctx context.Context, serviceID utils.EntityID, raw
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.logger.Debug("Loading service metrics", "service_id", serviceID.Canonical(), "metric_count", len(rawConfigs))
+
 	sink := NewDBSink(s.metricsRepo)
 	newMetrics, err := s.buildAll(serviceID, rawConfigs, sink)
 	if err != nil {
+		s.logger.Error("Failed to build metrics", "service_id", serviceID.Canonical(), "err", err)
 		return err
 	}
 
@@ -64,9 +67,12 @@ func (s *Service) LoadService(ctx context.Context, serviceID utils.EntityID, raw
 		if errors.Is(err, entitydomain.ErrIDNotFound) {
 			_, err = s.entityRepo.InsertEntity(ctx, id)
 			if err != nil {
+				s.logger.Error("Failed to create entity", "entity_id", id, "err", err)
 				return err
 			}
+			s.logger.Debug("Created entity", "entity_id", id)
 		} else if err != nil {
+			s.logger.Error("Failed to get entity", "entity_id", id, "err", err)
 			return err
 		}
 	}
@@ -77,6 +83,7 @@ func (s *Service) LoadService(ctx context.Context, serviceID utils.EntityID, raw
 		for _, id := range service.MetricIDs {
 			_, ok := newMetrics[id]
 			if !ok {
+				s.logger.Debug("Stopping metric (removed from config)", "metric_id", id)
 				s.stopInstanceUnsynced(id)
 				delete(s.metrics, id)
 			}
@@ -87,6 +94,7 @@ func (s *Service) LoadService(ctx context.Context, serviceID utils.EntityID, raw
 	for id, inst := range newMetrics {
 		old, ok := s.metrics[id]
 		if ok && old.running {
+			s.logger.Debug("Restarting metric (config changed)", "metric_id", id)
 			s.stopInstanceUnsynced(id)
 		}
 
@@ -96,6 +104,7 @@ func (s *Service) LoadService(ctx context.Context, serviceID utils.EntityID, raw
 
 		s.metrics[id] = inst
 		s.startInstanceUnsynced(id)
+		s.logger.Debug("Started metric", "metric_id", id, "interval", inst.Config.Interval)
 	}
 
 	// Update service instance
@@ -105,11 +114,13 @@ func (s *Service) LoadService(ctx context.Context, serviceID utils.EntityID, raw
 	}
 	s.services[serviceID.Canonical()] = NewServiceInstance(serviceID, nil, metricIDs)
 
+	s.logger.Info("Service metrics loaded", "service_id", serviceID.Canonical(), "metric_count", len(newMetrics))
 	return nil
 }
 
 // Stop stops all metrics collection
 func (s *Service) Stop(ctx context.Context) error {
+	s.logger.Debug("Stopping metrics service", "metric_count", len(s.metrics))
 	s.cancel()
 
 	done := make(chan struct{})
@@ -120,8 +131,10 @@ func (s *Service) Stop(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
+		s.logger.Warn("Stop timeout exceeded", "err", ctx.Err())
 		return ctx.Err()
 	case <-done:
+		s.logger.Debug("Metrics service stopped")
 		return nil
 	}
 }
@@ -180,15 +193,20 @@ func (s *Service) runMetric(inst *MetricInstance) {
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 	defer ticker.Stop()
 
+	s.logger.Debug("Metric started", "metric_id", inst.ID.Canonical(), "interval", interval)
+
 	for {
 		select {
 		case <-ticker.C:
 			err := inst.Metric.Run(inst.ctx)
 			if errors.Is(err, context.Canceled) {
-				s.logger.Warn("Metrics tick error", "id", inst.ID.Canonical(), "err", err)
 				continue
 			}
+			if err != nil {
+				s.logger.Warn("Metric execution error", "metric_id", inst.ID.Canonical(), "err", err)
+			}
 		case <-inst.ctx.Done():
+			s.logger.Debug("Metric stopped", "metric_id", inst.ID.Canonical())
 			return
 		}
 	}
@@ -206,6 +224,11 @@ func NewDBSink(repo domain.Repository) *DBSink {
 
 // Emit emits a metrics sample to the database
 func (s *DBSink) Emit(ctx context.Context, sample domain.Sample) error {
-	return s.repo.InsertSample(ctx, sample)
+	err := s.repo.InsertSample(ctx, sample)
+	if err != nil {
+		// Note: We don't have logger here, but the error will be returned
+		// and can be logged by the caller if needed
+	}
+	return err
 }
 
