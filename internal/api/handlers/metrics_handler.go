@@ -38,6 +38,11 @@ func NewMetricsHandler(service *api.MetricsService) *MetricsHandler {
 // @Security     ApiKeyAuth
 // @Router       /metrics [get]
 func (h *MetricsHandler) ListSamples(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
 	logger := getLogger(r)
 
 	req := api.ListSamplesRequest{}

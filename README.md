@@ -1,6 +1,6 @@
 # Meerkat
 
-Config-oriented monitoring and metrics collection server. Performs health checks and collects system metrics, storing results in SQLite. Configuration format is inspired by Kubernetes.
+Config-oriented monitoring and metrics collection server. Performs health checks and collects system metrics, storing results in SQLite.
 
 ## Features
 

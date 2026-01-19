@@ -8,22 +8,23 @@ import (
 	"sync"
 
 	"meerkat-v0/internal/config/domain"
-	"meerkat-v0/internal/infrastructure/logger"
-	monitoringapp "meerkat-v0/internal/monitoring/application"
-	metricsapp "meerkat-v0/internal/metrics/application"
+	sharedlogger "meerkat-v0/internal/shared/logger"
+	monitoringdomain "meerkat-v0/internal/monitoring/domain"
+	metricsdomain "meerkat-v0/internal/metrics/domain"
 	"meerkat-v0/internal/shared/validation"
 )
 
 // Loader handles configuration loading and translation to domain operations
 type Loader struct {
-	logger         *logger.Logger
-	monitorService *monitoringapp.Service
-	metricsService *metricsapp.Service
+	logger         sharedlogger.Logger
+	monitorService monitoringdomain.Service
+	metricsService metricsdomain.Service
 	mu            sync.RWMutex
+	currentConfig []byte // Stores the current configuration as raw JSON
 }
 
 // NewLoader creates a new configuration loader
-func NewLoader(logger *logger.Logger, monitorService *monitoringapp.Service, metricsService *metricsapp.Service) *Loader {
+func NewLoader(logger sharedlogger.Logger, monitorService monitoringdomain.Service, metricsService metricsdomain.Service) *Loader {
 	return &Loader{
 		logger:         logger,
 		monitorService: monitorService,
@@ -50,6 +51,9 @@ func (l *Loader) LoadConfig(ctx context.Context, rawConfig []byte) error {
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
+	// Store the current config
+	l.currentConfig = rawConfig
 
 	for i, service := range cfg.Services {
 		var servCfg map[string]json.RawMessage
@@ -123,6 +127,13 @@ func (l *Loader) LoadConfig(ctx context.Context, rawConfig []byte) error {
 
 	l.logger.Info("Configuration loaded successfully", "instance_name", cfg.Name, "service_count", len(cfg.Services))
 	return nil
+}
+
+// GetConfig returns the current configuration
+func (l *Loader) GetConfig() []byte {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.currentConfig
 }
 
 // Stop stops all services

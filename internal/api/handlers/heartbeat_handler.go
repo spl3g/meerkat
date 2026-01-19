@@ -37,6 +37,11 @@ func NewHeartbeatHandler(service *api.HeartbeatService) *HeartbeatHandler {
 // @Security     ApiKeyAuth
 // @Router       /heartbeats [get]
 func (h *HeartbeatHandler) ListHeartbeats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
 	logger := getLogger(r)
 
 	req := api.ListHeartbeatsRequest{}

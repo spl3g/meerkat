@@ -2,17 +2,15 @@ package domain
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"meerkat-v0/pkg/utils"
-	"meerkat-v0/internal/shared/validation"
 )
 
 // Monitor represents a monitoring entity in the domain
 type Monitor interface {
 	Run(ctx context.Context) error
-	Configure(id utils.EntityID, cfg []byte) error
+	Configure(id utils.EntityID, cfg []byte, httpClient HTTPClient, tcpClient TCPClient) error
 	Eq(newCfg []byte) (bool, error)
 }
 
@@ -65,40 +63,4 @@ func NewMonitorIDFromServiceID(serviceID utils.EntityID, monType, name string) u
 	)
 }
 
-// BuildMonitor creates a monitor from raw configuration
-func BuildMonitor(serviceID utils.EntityID, rawCfg []byte) (utils.EntityID, Monitor, error) {
-	var id utils.EntityID
-	var cfg MonitorConfig
-	err := json.Unmarshal(rawCfg, &cfg)
-	if err != nil {
-		return id, nil, err
-	}
-
-	problems := cfg.Valid(context.TODO())
-	if len(problems) > 0 {
-		return id, nil, validation.NewValidationError(problems, serviceID.Labels["name"], cfg.Name)
-	}
-
-	id = NewMonitorIDFromServiceID(serviceID, cfg.Type, cfg.Name)
-
-	// TODO: Replace with modules/factory pattern
-	var monitor Monitor
-	switch cfg.Type {
-	case "tcp":
-		monitor = &TCPMonitor{}
-	case "http":
-		monitor = &HTTPMonitor{}
-	default:
-		return id, nil, validation.NewValidationError(map[string]string{
-			"type": "unknown monitor type: " + cfg.Type,
-		}, serviceID.Labels["name"], cfg.Name)
-	}
-
-	err = monitor.Configure(id, rawCfg)
-	if err != nil {
-		return id, nil, err
-	}
-
-	return id, monitor, nil
-}
 
