@@ -15,34 +15,22 @@ type Repository struct {
 	readDB     *db.Queries
 	writeDB    *db.Queries
 	rawReadDB  *sql.DB
-	rawWriteDB *sql.DB
 	entityRepo entitydomain.Repository
 }
 
 // NewRepository creates a new SQLite monitor repository
-func NewRepository(readDB *db.Queries, writeDB *db.Queries, rawReadDB *sql.DB, rawWriteDB *sql.DB, entityRepo entitydomain.Repository) *Repository {
+func NewRepository(readDB *db.Queries, writeDB *db.Queries, rawReadDB *sql.DB, entityRepo entitydomain.Repository) *Repository {
 	return &Repository{
 		readDB:     readDB,
 		writeDB:    writeDB,
 		rawReadDB:  rawReadDB,
-		rawWriteDB: rawWriteDB,
 		entityRepo: entityRepo,
 	}
 }
 
 // InsertHeartbeat inserts a heartbeat into the database
 func (r *Repository) InsertHeartbeat(ctx context.Context, heartbeat domain.Heartbeat) error {
-	// Start a transaction to ensure atomicity of read+write operations
-	tx, err := r.rawWriteDB.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	// Use the transaction for both read and write operations
-	txQueries := r.writeDB.WithTx(tx)
-
-	eId, err := txQueries.GetEntityID(ctx, heartbeat.MonitorID)
+	eId, err := r.readDB.GetEntityID(ctx, heartbeat.MonitorID)
 	if err != nil {
 		return err
 	}
@@ -55,18 +43,13 @@ func (r *Repository) InsertHeartbeat(ctx context.Context, heartbeat domain.Heart
 		error.Valid = true
 	}
 
-	_, err = txQueries.InsertHeartbeat(ctx, db.InsertHeartbeatParams{
+	_, err = r.writeDB.InsertHeartbeat(ctx, db.InsertHeartbeatParams{
 		EntityID:   eId,
 		Ts:         heartbeat.Timestamp,
 		Successful: successful,
 		Error:      error,
 	})
 	if err != nil {
-		return err
-	}
-
-	// Commit the transaction
-	if err := tx.Commit(); err != nil {
 		return err
 	}
 

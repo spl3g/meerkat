@@ -16,34 +16,22 @@ type Repository struct {
 	readDB     *db.Queries
 	writeDB    *db.Queries
 	rawReadDB  *sql.DB
-	rawWriteDB *sql.DB
 	entityRepo entitydomain.Repository
 }
 
 // NewRepository creates a new SQLite metrics repository
-func NewRepository(readDB *db.Queries, writeDB *db.Queries, rawReadDB *sql.DB, rawWriteDB *sql.DB, entityRepo entitydomain.Repository) *Repository {
+func NewRepository(readDB *db.Queries, writeDB *db.Queries, rawReadDB *sql.DB, entityRepo entitydomain.Repository) *Repository {
 	return &Repository{
 		readDB:     readDB,
 		writeDB:    writeDB,
 		rawReadDB:  rawReadDB,
-		rawWriteDB: rawWriteDB,
 		entityRepo: entityRepo,
 	}
 }
 
 // InsertSample inserts a metrics sample into the database
 func (r *Repository) InsertSample(ctx context.Context, sample domain.Sample) error {
-	// Start a transaction to ensure atomicity of read+write operations
-	tx, err := r.rawWriteDB.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	// Use the transaction for both read and write operations
-	txQueries := r.writeDB.WithTx(tx)
-
-	eId, err := txQueries.GetEntityID(ctx, sample.ID.Canonical())
+	eId, err := r.readDB.GetEntityID(ctx, sample.ID.Canonical())
 	if err != nil {
 		return err
 	}
@@ -53,7 +41,7 @@ func (r *Repository) InsertSample(ctx context.Context, sample domain.Sample) err
 		return err
 	}
 
-	_, err = txQueries.InsertMetrics(ctx, db.InsertMetricsParams{
+	_, err = r.writeDB.InsertMetrics(ctx, db.InsertMetricsParams{
 		EntityID: eId,
 		Ts:       sample.Timestamp,
 		Type:     string(sample.Type),
@@ -62,11 +50,6 @@ func (r *Repository) InsertSample(ctx context.Context, sample domain.Sample) err
 		Labels:   labels,
 	})
 	if err != nil {
-		return err
-	}
-
-	// Commit the transaction
-	if err := tx.Commit(); err != nil {
 		return err
 	}
 
