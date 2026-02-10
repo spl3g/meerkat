@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
 	api "meerkat-v0/internal/api/application"
 	entitydomain "meerkat-v0/internal/shared/entity/domain"
 )
@@ -197,15 +195,6 @@ func TestEntityHandler_GetEntity(t *testing.T) {
 
 			req := httptest.NewRequest(tt.method, tt.path, nil)
 			w := httptest.NewRecorder()
-
-			// Set up chi router context for URL parameter extraction
-			rctx := chi.NewRouteContext()
-			// Extract ID from path: /api/v1/entities/{id}
-			pathParts := strings.Split(strings.TrimPrefix(tt.path, "/api/v1/entities/"), "/")
-			if len(pathParts) > 0 && pathParts[0] != "" {
-				rctx.URLParams.Add("id", pathParts[0])
-			}
-			req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 			handler.GetEntity(w, req)
 

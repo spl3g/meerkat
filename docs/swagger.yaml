@@ -57,25 +57,6 @@ info:
   version: "1.0"
 paths:
   /config:
-    get:
-      description: Retrieve the current monitoring and metrics configuration
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/application.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: Get current configuration
-      tags:
-      - config
     post:
       consumes:
       - application/json

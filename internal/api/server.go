@@ -16,7 +16,7 @@ import (
 	api "meerkat-v0/internal/api/application"
 	"meerkat-v0/internal/api/handlers"
 	apimiddleware "meerkat-v0/internal/api/middleware"
-	sharedlogger "meerkat-v0/internal/shared/logger"
+	"meerkat-v0/internal/infrastructure/logger"
 	entitydomain "meerkat-v0/internal/shared/entity/domain"
 	monitoringdomain "meerkat-v0/internal/monitoring/domain"
 	metricsdomain "meerkat-v0/internal/metrics/domain"
@@ -25,12 +25,12 @@ import (
 // Server represents the API server
 type Server struct {
 	httpServer *http.Server
-	logger     sharedlogger.Logger
+	logger     *logger.Logger
 }
 
 // NewServer creates a new API server
 func NewServer(
-	logger sharedlogger.Logger,
+	logger *logger.Logger,
 	runtimeCfg *configapp.RuntimeConfig,
 	configLoader *configapp.Loader,
 	entityRepo entitydomain.Repository,
@@ -61,17 +61,8 @@ func NewServer(
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	
-	// HTTP logging middleware - need concrete slog.Logger for httplog
-	// Type assert to infrastructure logger to get underlying slog.Logger
-	var slogLogger *slog.Logger
-	if infraLogger, ok := logger.(interface{ SLog() *slog.Logger }); ok {
-		slogLogger = infraLogger.SLog()
-	} else {
-		// Fallback to default if type assertion fails
-		slogLogger = slog.Default()
-	}
-	
-	r.Use(httplog.RequestLogger(slogLogger, &httplog.Options{
+	// HTTP logging middleware
+	r.Use(httplog.RequestLogger(logger.Logger, &httplog.Options{
 		Level:            slog.LevelDebug,
 		Schema:           httplog.SchemaECS.Concise(true),
 		LogRequestHeaders: []string{}, // Log no headers by default to reduce verbosity
@@ -94,7 +85,6 @@ func NewServer(
 		r.Use(apimiddleware.APIKeyAuthWithKey(runtimeCfg.APIKey))
 		
 		// Routes
-		r.Get("/config", configHandler.GetConfig)
 		r.Post("/config", configHandler.LoadConfig)
 		r.Get("/entities", entityHandler.ListEntities)
 		r.Get("/entities/{id}", entityHandler.GetEntity)

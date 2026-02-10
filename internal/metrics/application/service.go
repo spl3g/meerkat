@@ -10,21 +10,16 @@ import (
 
 	"meerkat-v0/pkg/utils"
 	"meerkat-v0/internal/metrics/domain"
-	metricsinfra "meerkat-v0/internal/metrics/infrastructure"
 	entitydomain "meerkat-v0/internal/shared/entity/domain"
 	"meerkat-v0/internal/shared/validation"
-	sharedlogger "meerkat-v0/internal/shared/logger"
+	"meerkat-v0/internal/infrastructure/logger"
 )
-
-// Ensure Service implements the domain Service interface
-var _ domain.Service = (*Service)(nil)
 
 // Service handles metrics collection lifecycle management
 type Service struct {
-	logger        sharedlogger.Logger
-	metricsRepo   domain.Repository
-	entityRepo    entitydomain.Repository
-	systemReader  domain.SystemMetricsReader
+	logger     *logger.Logger
+	metricsRepo domain.Repository
+	entityRepo  entitydomain.Repository
 
 	mu sync.RWMutex
 	// Metric ID to metric instance
@@ -39,17 +34,16 @@ type Service struct {
 }
 
 // NewService creates a new metrics service
-func NewService(logger sharedlogger.Logger, metricsRepo domain.Repository, entityRepo entitydomain.Repository) *Service {
+func NewService(logger *logger.Logger, metricsRepo domain.Repository, entityRepo entitydomain.Repository) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{
-		logger:       logger,
-		metricsRepo:  metricsRepo,
-		entityRepo:   entityRepo,
-		systemReader: metricsinfra.NewSystemMetricsReader(),
-		metrics:      make(map[string]*MetricInstance),
-		services:     make(map[string]*ServiceInstance),
-		ctx:          ctx,
-		cancel:       cancel,
+		logger:     logger,
+		metricsRepo: metricsRepo,
+		entityRepo:  entityRepo,
+		metrics:     make(map[string]*MetricInstance),
+		services:    make(map[string]*ServiceInstance),
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 }
 
@@ -61,7 +55,7 @@ func (s *Service) LoadService(ctx context.Context, serviceID utils.EntityID, raw
 	s.logger.Debug("Loading service metrics", "service_id", serviceID.Canonical(), "metric_count", len(rawConfigs))
 
 	sink := NewDBSink(s.metricsRepo)
-	newMetrics, err := s.buildAll(serviceID, rawConfigs, sink, s.systemReader)
+	newMetrics, err := s.buildAll(serviceID, rawConfigs, sink)
 	if err != nil {
 		s.logger.Error("Failed to build metrics", "service_id", serviceID.Canonical(), "err", err)
 		return err
@@ -145,11 +139,11 @@ func (s *Service) Stop(ctx context.Context) error {
 	}
 }
 
-func (s *Service) buildAll(serviceID utils.EntityID, rawConfigs []json.RawMessage, sink domain.Sink, systemReader domain.SystemMetricsReader) (map[string]*MetricInstance, error) {
+func (s *Service) buildAll(serviceID utils.EntityID, rawConfigs []json.RawMessage, sink domain.Sink) (map[string]*MetricInstance, error) {
 	result := make(map[string]*MetricInstance)
 
 	for i, rawMetricCfg := range rawConfigs {
-		id, metric, err := BuildMetric(serviceID, rawMetricCfg, sink, systemReader)
+		id, metric, err := domain.BuildMetric(serviceID, rawMetricCfg, sink)
 		var nnerr *validation.NoNameError
 		if errors.As(err, &nnerr) {
 			nnerr.SetIndex(i)

@@ -8,24 +8,18 @@ import (
 	"sync"
 	"time"
 
-	sharedlogger "meerkat-v0/internal/shared/logger"
+	"meerkat-v0/pkg/utils"
 	"meerkat-v0/internal/monitoring/domain"
-	monitoringinfra "meerkat-v0/internal/monitoring/infrastructure"
 	entitydomain "meerkat-v0/internal/shared/entity/domain"
 	"meerkat-v0/internal/shared/validation"
-	"meerkat-v0/pkg/utils"
+	"meerkat-v0/internal/infrastructure/logger"
 )
-
-// Ensure Service implements the domain Service interface
-var _ domain.Service = (*Service)(nil)
 
 // Service handles monitor lifecycle management
 type Service struct {
-	logger      sharedlogger.Logger
+	logger      *logger.Logger
 	monitorRepo domain.Repository
 	entityRepo  entitydomain.Repository
-	httpClient  domain.HTTPClient
-	tcpClient   domain.TCPClient
 
 	mu sync.RWMutex
 	// Monitor ID to monitor instance
@@ -40,14 +34,12 @@ type Service struct {
 }
 
 // NewService creates a new monitor service
-func NewService(logger sharedlogger.Logger, monitorRepo domain.Repository, entityRepo entitydomain.Repository) *Service {
+func NewService(logger *logger.Logger, monitorRepo domain.Repository, entityRepo entitydomain.Repository) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{
-		logger:      logger,
+		logger:     logger,
 		monitorRepo: monitorRepo,
 		entityRepo:  entityRepo,
-		httpClient:  monitoringinfra.NewHTTPClient(),
-		tcpClient:   monitoringinfra.NewTCPClient(),
 		monitors:    make(map[string]*MonitorInstance),
 		services:    make(map[string]*ServiceInstance),
 		ctx:         ctx,
@@ -150,7 +142,7 @@ func (s *Service) buildAll(serviceID utils.EntityID, rawConfigs []json.RawMessag
 	result := make(map[string]*MonitorInstance)
 
 	for i, rawMonitorCfg := range rawConfigs {
-		id, monitor, err := BuildMonitor(serviceID, rawMonitorCfg, s.httpClient, s.tcpClient)
+		id, monitor, err := domain.BuildMonitor(serviceID, rawMonitorCfg)
 		var nnerr *validation.NoNameError
 		if errors.As(err, &nnerr) {
 			nnerr.SetIndex(i)
@@ -210,7 +202,7 @@ func (s *Service) runMonitor(inst *MonitorInstance) {
 				continue
 			}
 			if err != nil {
-				s.logger.Debug("Monitor execution error", "monitor_id", inst.ID.Canonical(), "err", err)
+				s.logger.Warn("Monitor execution error", "monitor_id", inst.ID.Canonical(), "err", err)
 			}
 			heartbeat := domain.NewHeartbeat(inst.ID.Canonical(), time.Now(), err)
 			if err := s.monitorRepo.InsertHeartbeat(inst.ctx, heartbeat); err != nil {
@@ -222,3 +214,4 @@ func (s *Service) runMonitor(inst *MonitorInstance) {
 		}
 	}
 }
+

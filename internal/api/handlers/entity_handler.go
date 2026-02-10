@@ -31,11 +31,6 @@ func NewEntityHandler(service *api.EntityService) *EntityHandler {
 // @Security     ApiKeyAuth
 // @Router       /entities [get]
 func (h *EntityHandler) ListEntities(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		respondJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-
 	logger := getLogger(r)
 
 	entities, err := h.service.ListEntities(r.Context())
@@ -63,11 +58,6 @@ func (h *EntityHandler) ListEntities(w http.ResponseWriter, r *http.Request) {
 // @Security     ApiKeyAuth
 // @Router       /entities/{id} [get]
 func (h *EntityHandler) GetEntity(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		respondJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-
 	logger := getLogger(r)
 
 	// Extract canonical ID from chi URL parameter

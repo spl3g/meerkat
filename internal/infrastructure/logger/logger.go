@@ -5,17 +5,11 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-
-	sharedlogger "meerkat-v0/internal/shared/logger"
 )
 
-// Logger implements the shared logger interface
 type Logger struct {
 	*slog.Logger
 }
-
-// Ensure Logger implements the shared logger interface
-var _ sharedlogger.Logger = (*Logger)(nil)
 
 type loggerKeyType struct{}
 
@@ -101,10 +95,5 @@ func parseLogLevel(levelStr string) slog.Level {
 // SetDefaultLogger sets the logger as the default slog logger
 func SetDefaultLogger(l *Logger) {
 	slog.SetDefault(l.Logger)
-}
-
-// SLog returns the underlying slog.Logger for use with libraries that require it
-func (l *Logger) SLog() *slog.Logger {
-	return l.Logger
 }
 

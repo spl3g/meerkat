@@ -4,13 +4,13 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
-	sharedlogger "meerkat-v0/internal/shared/logger"
+	"meerkat-v0/internal/infrastructure/logger"
 )
 
 // LoadEnvFile loads environment variables from a .env file
 // If envFile is empty, it attempts to load .env from the current directory
 // Returns true if a file was loaded, false otherwise
-func LoadEnvFile(logger sharedlogger.Logger, envFile string) bool {
+func LoadEnvFile(logger *logger.Logger, envFile string) bool {
 	// If no file specified, try default .env in current directory
 	if envFile == "" {
 		envFile = ".env"
