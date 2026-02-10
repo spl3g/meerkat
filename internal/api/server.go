@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"time"
 
@@ -62,11 +61,7 @@ func NewServer(
 	r.Use(middleware.Recoverer)
 	
 	// HTTP logging middleware
-	r.Use(httplog.RequestLogger(logger.Logger, &httplog.Options{
-		Level:            slog.LevelDebug,
-		Schema:           httplog.SchemaECS.Concise(true),
-		LogRequestHeaders: []string{}, // Log no headers by default to reduce verbosity
-	}))
+	r.Use(httplog.RequestLogger(logger.Logger, nil))
 
 	// Swagger UI (only in dev mode, no auth required)
 	if runtimeCfg.DevMode {
