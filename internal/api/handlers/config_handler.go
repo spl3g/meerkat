@@ -32,22 +32,23 @@ func NewConfigHandler(configLoader *configapp.Loader) *ConfigHandler {
 // @Security     ApiKeyAuth
 // @Router       /config [post]
 func (h *ConfigHandler) LoadConfig(w http.ResponseWriter, r *http.Request) {
-	logger := getLogger(r)
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
 	var req api.LoadConfigRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logger.Warn("Invalid request body", "err", err)
 		respondJSONError(w, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 
 	if err := h.configLoader.LoadConfig(r.Context(), req.Config); err != nil {
-		logger.Error("Failed to load config", "err", err)
 		respondJSONError(w, http.StatusBadRequest, "Failed to load config: "+err.Error())
 		return
 	}
 
-	logger.Info("Configuration loaded successfully")
-	respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 

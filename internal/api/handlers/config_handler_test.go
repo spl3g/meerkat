@@ -34,7 +34,7 @@ func setupTestConfigHandler(t *testing.T) (*ConfigHandler, func()) {
 	logger := logger.DefaultLogger()
 	monitorService := monitoringapp.NewService(logger, monitorRepo, entityRepo)
 	metricsService := metricsapp.NewService(logger, metricsRepo, entityRepo)
-	configLoader := configapp.NewLoader(logger, monitorService, metricsService)
+	configLoader := configapp.NewLoader(monitorService, metricsService)
 
 	handler := NewConfigHandler(configLoader)
 

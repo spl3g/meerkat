@@ -7,16 +7,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/httplog/v3"
 	httpSwagger "github.com/swaggo/http-swagger"
 
 	configapp "meerkat-v0/internal/config/application"
 	api "meerkat-v0/internal/api/application"
 	"meerkat-v0/internal/api/handlers"
-	apimiddleware "meerkat-v0/internal/api/middleware"
-	"meerkat-v0/internal/infrastructure/logger"
+	"meerkat-v0/internal/api/middleware"
 	entitydomain "meerkat-v0/internal/shared/entity/domain"
 	monitoringdomain "meerkat-v0/internal/monitoring/domain"
 	metricsdomain "meerkat-v0/internal/metrics/domain"
@@ -25,12 +21,10 @@ import (
 // Server represents the API server
 type Server struct {
 	httpServer *http.Server
-	logger     *logger.Logger
 }
 
 // NewServer creates a new API server
 func NewServer(
-	logger *logger.Logger,
 	configLoader *configapp.Loader,
 	entityRepo entitydomain.Repository,
 	monitorRepo monitoringdomain.Repository,
@@ -62,80 +56,56 @@ func NewServer(
 	// Check if dev mode is enabled
 	devMode := os.Getenv("MEERKAT_DEV_MODE") == "true"
 
-	// Setup chi router
-	r := chi.NewRouter()
+	// Setup router
+	mux := http.NewServeMux()
 
-	// Middleware stack
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Recoverer)
-	
-	// HTTP logging middleware
-	r.Use(httplog.RequestLogger(logger.Logger, nil))
-
-	// Swagger UI (only in dev mode, no auth required)
+	// Swagger UI (only in dev mode)
 	if devMode {
+		// Use relative path - http-swagger will handle serving all assets
 		swaggerHandler := httpSwagger.Handler(
 			httpSwagger.URL("/swagger/doc.json"),
 		)
-		r.Handle("/swagger/*", swaggerHandler)
-		r.Get("/swagger", func(w http.ResponseWriter, r *http.Request) {
+		// Use Handle to properly serve all sub-paths and assets
+		mux.Handle("/swagger/", swaggerHandler)
+		// Redirect /swagger to /swagger/
+		mux.HandleFunc("/swagger", func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/swagger/", http.StatusMovedPermanently)
 		})
 	}
 
-	// API v1 routes (with authentication)
-	r.Route("/api/v1", func(r chi.Router) {
-		// Apply API key auth middleware
-		r.Use(apimiddleware.APIKeyAuth)
-		
-		// Routes
-		r.Post("/config", configHandler.LoadConfig)
-		r.Get("/entities", entityHandler.ListEntities)
-		r.Get("/entities/{id}", entityHandler.GetEntity)
-		r.Get("/heartbeats", heartbeatHandler.ListHeartbeats)
-		r.Get("/metrics", metricsHandler.ListSamples)
-	})
+	// API v1 routes
+	apiV1 := http.NewServeMux()
+	apiV1.HandleFunc("/config", configHandler.LoadConfig)
+	apiV1.HandleFunc("/entities", entityHandler.ListEntities)
+	apiV1.HandleFunc("/entities/", entityHandler.GetEntity)
+	apiV1.HandleFunc("/heartbeats", heartbeatHandler.ListHeartbeats)
+	apiV1.HandleFunc("/metrics", metricsHandler.ListSamples)
+
+	mux.Handle("/api/v1/", http.StripPrefix("/api/v1", apiV1))
+
+	// Apply middleware - it will skip authentication for Swagger paths
+	handler := middleware.APIKeyAuth(mux)
 
 	httpServer := &http.Server{
 		Addr:         ":" + port,
-		Handler:      r,
+		Handler:      handler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
-	logger.Debug("Server configured",
-		"port", port,
-		"dev_mode", devMode,
-		"middleware", []string{"RequestID", "RealIP", "Recoverer", "httplog"},
-	)
-
 	return &Server{
 		httpServer: httpServer,
-		logger:     logger,
 	}, nil
 }
 
 // Start starts the HTTP server
 func (s *Server) Start() error {
-	s.logger.Info("Starting HTTP server", "addr", s.httpServer.Addr)
-	err := s.httpServer.ListenAndServe()
-	if err != nil && err != http.ErrServerClosed {
-		s.logger.Error("Server error", "err", err)
-	}
-	return err
+	return s.httpServer.ListenAndServe()
 }
 
 // Shutdown gracefully shuts down the server
 func (s *Server) Shutdown(ctx context.Context) error {
-	s.logger.Info("Shutting down HTTP server")
-	err := s.httpServer.Shutdown(ctx)
-	if err != nil {
-		s.logger.Error("Server shutdown error", "err", err)
-	} else {
-		s.logger.Info("Server shutdown complete")
-	}
-	return err
+	return s.httpServer.Shutdown(ctx)
 }
 

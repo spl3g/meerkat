@@ -1,6 +1,8 @@
-package logger
+package utils
 
-import "log/slog"
+import (
+	"log/slog"
+)
 
 type Logger struct {
 	*slog.Logger
@@ -19,4 +21,3 @@ func DefaultLogger() *Logger {
 func SetDefaultLogger(l *Logger) {
 	slog.SetDefault(l.Logger)
 }
-

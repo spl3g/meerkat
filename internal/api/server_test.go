@@ -48,9 +48,9 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 	logger := logger.DefaultLogger()
 	monitorService := monitoringapp.NewService(logger, monitorRepo, entityRepo)
 	metricsService := metricsapp.NewService(logger, metricsRepo, entityRepo)
-	configLoader := configapp.NewLoader(logger, monitorService, metricsService)
+	configLoader := configapp.NewLoader(monitorService, metricsService)
 
-	server, err := NewServer(logger, configLoader, entityRepo, monitorRepo, metricsRepo)
+	server, err := NewServer(configLoader, entityRepo, monitorRepo, metricsRepo)
 	if err != nil {
 		t.Fatalf("Failed to create server: %v", err)
 	}
@@ -130,9 +130,9 @@ func TestNewServer(t *testing.T) {
 			logger := logger.DefaultLogger()
 			monitorService := monitoringapp.NewService(logger, monitorRepo, entityRepo)
 			metricsService := metricsapp.NewService(logger, metricsRepo, entityRepo)
-			configLoader := configapp.NewLoader(logger, monitorService, metricsService)
+			configLoader := configapp.NewLoader(monitorService, metricsService)
 
-			server, err := NewServer(logger, configLoader, entityRepo, monitorRepo, metricsRepo)
+			server, err := NewServer(configLoader, entityRepo, monitorRepo, metricsRepo)
 
 			if tt.expectError {
 				if err == nil {
@@ -246,9 +246,9 @@ func TestServer_PortConfiguration(t *testing.T) {
 	logger := logger.DefaultLogger()
 	monitorService := monitoringapp.NewService(logger, monitorRepo, entityRepo)
 	metricsService := metricsapp.NewService(logger, metricsRepo, entityRepo)
-	configLoader := configapp.NewLoader(logger, monitorService, metricsService)
+	configLoader := configapp.NewLoader(monitorService, metricsService)
 
-	server, err := NewServer(logger, configLoader, entityRepo, monitorRepo, metricsRepo)
+	server, err := NewServer(configLoader, entityRepo, monitorRepo, metricsRepo)
 	if err != nil {
 		t.Fatalf("Failed to create server: %v", err)
 	}

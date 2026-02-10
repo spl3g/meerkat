@@ -38,7 +38,10 @@ func NewMetricsHandler(service *api.MetricsService) *MetricsHandler {
 // @Security     ApiKeyAuth
 // @Router       /metrics [get]
 func (h *MetricsHandler) ListSamples(w http.ResponseWriter, r *http.Request) {
-	logger := getLogger(r)
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
 	req := api.ListSamplesRequest{}
 
@@ -81,12 +84,10 @@ func (h *MetricsHandler) ListSamples(w http.ResponseWriter, r *http.Request) {
 
 	samples, err := h.service.ListSamples(r.Context(), req)
 	if err != nil {
-		logger.Error("Failed to list metrics", "err", err, "filters", req)
 		respondJSONError(w, http.StatusInternalServerError, "Failed to list metrics: "+err.Error())
 		return
 	}
 
-	logger.Debug("Listed metrics samples", "count", len(samples))
 	respondJSON(w, http.StatusOK, samples)
 }
 
