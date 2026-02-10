@@ -1,4 +1,4 @@
-package validation
+package main
 
 import (
 	"context"
@@ -89,4 +89,3 @@ func (e *NoNameError) PrependPath(path string) ConfigError {
 	e.Path = fmt.Sprint(path, ".", e.Path)
 	return e
 }
-
