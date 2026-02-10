@@ -14,7 +14,7 @@ import (
 	metricsapp "meerkat-v0/internal/metrics/application"
 	metricsinfra "meerkat-v0/internal/metrics/infrastructure"
 	entityinfra "meerkat-v0/internal/shared/entity/infrastructure"
-	"meerkat-v0/internal/infrastructure/database/queries"
+	"meerkat-v0/db"
 	"meerkat-v0/internal/schema"
 )
 
@@ -31,10 +31,10 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
-	q := queries.New(testDB)
-	entityRepo := entityinfra.NewRepository(q, q)
-	monitorRepo := monitoringinfra.NewRepository(q, q, testDB, testDB, entityRepo)
-	metricsRepo := metricsinfra.NewRepository(q, q, testDB, testDB, entityRepo)
+	queries := db.New(testDB)
+	entityRepo := entityinfra.NewRepository(queries, queries)
+	monitorRepo := monitoringinfra.NewRepository(queries, queries, testDB, testDB, entityRepo)
+	metricsRepo := metricsinfra.NewRepository(queries, queries, testDB, testDB, entityRepo)
 
 	logger := logger.DefaultLogger()
 	monitorService := monitoringapp.NewService(logger, monitorRepo, entityRepo)
@@ -97,10 +97,10 @@ func TestNewServer(t *testing.T) {
 				t.Fatalf("Failed to initialize schema: %v", err)
 			}
 
-			q := queries.New(testDB)
-			entityRepo := entityinfra.NewRepository(q, q)
-			monitorRepo := monitoringinfra.NewRepository(q, q, testDB, testDB, entityRepo)
-			metricsRepo := metricsinfra.NewRepository(q, q, testDB, testDB, entityRepo)
+			queries := db.New(testDB)
+			entityRepo := entityinfra.NewRepository(queries, queries)
+			monitorRepo := monitoringinfra.NewRepository(queries, queries, testDB, testDB, entityRepo)
+			metricsRepo := metricsinfra.NewRepository(queries, queries, testDB, testDB, entityRepo)
 
 			logger := logger.DefaultLogger()
 			monitorService := monitoringapp.NewService(logger, monitorRepo, entityRepo)
@@ -208,10 +208,10 @@ func TestServer_PortConfiguration(t *testing.T) {
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
-	q := queries.New(testDB)
-	entityRepo := entityinfra.NewRepository(q, q)
-	monitorRepo := monitoringinfra.NewRepository(q, q, testDB, testDB, entityRepo)
-	metricsRepo := metricsinfra.NewRepository(q, q, testDB, testDB, entityRepo)
+	queries := db.New(testDB)
+	entityRepo := entityinfra.NewRepository(queries, queries)
+	monitorRepo := monitoringinfra.NewRepository(queries, queries, testDB, testDB, entityRepo)
+	metricsRepo := metricsinfra.NewRepository(queries, queries, testDB, testDB, entityRepo)
 
 	logger := logger.DefaultLogger()
 	monitorService := monitoringapp.NewService(logger, monitorRepo, entityRepo)

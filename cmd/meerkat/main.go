@@ -35,7 +35,7 @@ import (
 
 	_ "meerkat-v0/docs" // Swagger docs
 
-	"meerkat-v0/internal/infrastructure/database/queries"
+	"meerkat-v0/db"
 	apiserver "meerkat-v0/internal/api"
 	configapp "meerkat-v0/internal/config/application"
 	"meerkat-v0/internal/infrastructure/database"
@@ -97,8 +97,8 @@ func run(runtimeCfg *configapp.RuntimeConfig) error {
 	}
 	appLogger.Debug("Database schema initialized")
 
-	readDB := queries.New(dbRead)
-	writeDB := queries.New(dbWrite)
+	readDB := db.New(dbRead)
+	writeDB := db.New(dbWrite)
 
 	// Initialize shared entity repository
 	appLogger.Debug("Initializing entity repository")
