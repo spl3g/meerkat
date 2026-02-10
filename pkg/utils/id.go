@@ -63,16 +63,9 @@ func ParseEntityID(str string) EntityID {
 		Labels: make(map[string]string),
 	}
 
-	if str == "" {
-		return e
-	}
-
 	labels := strings.SplitSeq(str, IDSeparator)
 	for label := range labels {
 		kv := strings.Split(label, "=")
-		if len(kv) < 2 {
-			continue
-		}
 		if kv[0] == "kind" {
 			e.Kind = kv[1]
 			continue

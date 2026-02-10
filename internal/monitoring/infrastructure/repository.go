@@ -126,7 +126,7 @@ limit ?5 offset ?6`
 
 		var err error
 		if row.Error.Valid {
-			err = fmt.Errorf("%s", row.Error.String)
+			err = fmt.Errorf(row.Error.String)
 		}
 
 		heartbeats = append(heartbeats, domain.NewHeartbeat(row.CanonicalID, row.Ts, err))
