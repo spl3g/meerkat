@@ -33,8 +33,17 @@ func NewRepository(readDB *queries.Queries, writeDB *queries.Queries, rawReadDB 
 
 // InsertSample inserts a metrics sample into the database
 func (r *Repository) InsertSample(ctx context.Context, sample domain.Sample) error {
-	// Get entity ID (entities are created before metrics start running)
-	eId, err := r.writeDB.GetEntityID(ctx, sample.ID.Canonical())
+	// Start a transaction to ensure atomicity of read+write operations
+	tx, err := r.rawWriteDB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Use the transaction for both read and write operations
+	txQueries := r.writeDB.WithTx(tx)
+
+	eId, err := txQueries.GetEntityID(ctx, sample.ID.Canonical())
 	if err != nil {
 		return err
 	}
@@ -44,7 +53,7 @@ func (r *Repository) InsertSample(ctx context.Context, sample domain.Sample) err
 		return err
 	}
 
-	_, err = r.writeDB.InsertMetrics(ctx, queries.InsertMetricsParams{
+	_, err = txQueries.InsertMetrics(ctx, queries.InsertMetricsParams{
 		EntityID: eId,
 		Ts:       sample.Timestamp,
 		Type:     string(sample.Type),
@@ -53,6 +62,11 @@ func (r *Repository) InsertSample(ctx context.Context, sample domain.Sample) err
 		Labels:   labels,
 	})
 	if err != nil {
+		return err
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
 		return err
 	}
 
