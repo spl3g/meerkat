@@ -1,30 +1,9 @@
-// @title           Meerkat API
-// @version         1.0
-// @description     This is the Meerkat monitoring and metrics API server.
-// @termsOfService  http://swagger.io/terms/
-
-// @contact.name   API Support
-// @contact.url    http://www.swagger.io/support
-// @contact.email  support@swagger.io
-
-// @license.name  Apache 2.0
-// @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
-
-// @securityDefinitions.apikey ApiKeyAuth
-// @in header
-// @name X-API-Key
-// @description API Key authentication
-
-// @host      localhost:8080
-// @BasePath  /api/v1
-
 package main
 
 import (
 	"context"
 	_ "embed"
 	"fmt"
-	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -32,10 +11,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	_ "meerkat-v0/docs" // Swagger docs
-
 	"meerkat-v0/db"
-	apiserver "meerkat-v0/internal/api"
 	configapp "meerkat-v0/internal/config/application"
 	"meerkat-v0/internal/infrastructure/database"
 	"meerkat-v0/internal/infrastructure/logger"
@@ -94,12 +70,12 @@ func run() error {
 	entityRepo := entityinfra.NewRepository(readDB, writeDB)
 
 	// Initialize monitoring services
-	monitorRepo := monitoringinfra.NewRepository(readDB, writeDB, dbRead, entityRepo)
+	monitorRepo := monitoringinfra.NewRepository(readDB, writeDB, entityRepo)
 	monitorLogger := logger.DefaultLogger()
 	monitorService := monitoringapp.NewService(monitorLogger, monitorRepo, entityRepo)
 
 	// Initialize metrics services
-	metricsRepo := metricsinfra.NewRepository(readDB, writeDB, dbRead, entityRepo)
+	metricsRepo := metricsinfra.NewRepository(readDB, writeDB, entityRepo)
 	metricsLogger := logger.DefaultLogger()
 	metricsService := metricsapp.NewService(metricsLogger, metricsRepo, entityRepo)
 
@@ -112,43 +88,13 @@ func run() error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Initialize API server
-	apiServer, err := apiserver.NewServer(configLoader, entityRepo, monitorRepo, metricsRepo)
-	if err != nil {
-		return fmt.Errorf("failed to create API server: %w", err)
-	}
+	// Wait for interrupt
+	<-sigCtx.Done()
 
-	// Start API server in a goroutine
-	serverErrChan := make(chan error, 1)
-	go func() {
-		if err := apiServer.Start(); err != nil && err != http.ErrServerClosed {
-			serverErrChan <- fmt.Errorf("API server error: %w", err)
-		}
-	}()
-
-	// Wait for interrupt or server error
-	select {
-	case <-sigCtx.Done():
-		// Graceful shutdown
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer shutdownCancel()
-
-		var shutdownErr error
-		if err := apiServer.Shutdown(shutdownCtx); err != nil {
-			shutdownErr = fmt.Errorf("API server shutdown error: %w", err)
-		}
-
-		if err := configLoader.Stop(shutdownCtx); err != nil {
-			if shutdownErr != nil {
-				return fmt.Errorf("multiple shutdown errors: %v, %v", shutdownErr, err)
-			}
-			return fmt.Errorf("config loader shutdown error: %w", err)
-		}
-
-		return shutdownErr
-	case err := <-serverErrChan:
-		return err
-	}
+	// Graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 350*time.Millisecond)
+	defer cancel()
+	return configLoader.Stop(ctx)
 }
 
 func main() {

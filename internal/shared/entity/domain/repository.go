@@ -11,7 +11,5 @@ type Repository interface {
 	GetID(ctx context.Context, canonID string) (int64, error)
 	InsertEntity(ctx context.Context, canonID string) (int64, error)
 	GetCanonicalID(ctx context.Context, id int64) (string, error)
-	ListEntities(ctx context.Context) ([]Entity, error)
-	GetEntity(ctx context.Context, canonicalID string) (*Entity, error)
 }
 
